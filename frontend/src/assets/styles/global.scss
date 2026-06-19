@@ -1,0 +1,220 @@
+@use './variables.scss' as *;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  background-color: $bg-primary;
+  color: $text-primary;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100%;
+  width: 100%;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: $bg-secondary;
+}
+
+::-webkit-scrollbar-thumb {
+  background: $border-color;
+  border-radius: 3px;
+
+  &:hover {
+    background: rgba(0, 212, 255, 0.4);
+  }
+}
+
+::selection {
+  background: rgba(0, 212, 255, 0.3);
+  color: $text-primary;
+}
+
+.el-card {
+  background: $bg-card;
+  border: 1px solid $border-color;
+  border-radius: 8px;
+
+  .el-card__header {
+    background: rgba(0, 212, 255, 0.05);
+    border-bottom: 1px solid $border-color;
+    color: $text-primary;
+    font-weight: 600;
+    padding: 16px 20px;
+  }
+
+  .el-card__body {
+    padding: 20px;
+  }
+}
+
+.el-table {
+  background: transparent;
+  color: $text-secondary;
+
+  th.el-table__cell {
+    background: rgba(0, 212, 255, 0.05) !important;
+    color: $text-primary;
+    font-weight: 600;
+    border-bottom: 1px solid $border-color !important;
+  }
+
+  td.el-table__cell {
+    background: transparent !important;
+    border-bottom: 1px solid $border-color !important;
+    color: $text-secondary;
+  }
+
+  tr:hover > td.el-table__cell {
+    background: rgba(0, 212, 255, 0.05) !important;
+  }
+}
+
+.el-button {
+  &--primary {
+    background: linear-gradient(135deg, $color-primary 0%, #0099cc 100%);
+    border-color: $color-primary;
+
+    &:hover {
+      background: linear-gradient(135deg, #33ddff 0%, $color-primary 100%);
+      border-color: #33ddff;
+    }
+  }
+}
+
+.el-input,
+.el-select {
+  .el-input__wrapper,
+  .el-select__wrapper {
+    background: $bg-secondary;
+    border: 1px solid $border-color;
+    box-shadow: none;
+
+    &:hover {
+      border-color: $border-light;
+    }
+
+    &.is-focus {
+      border-color: $color-primary;
+      box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.1);
+    }
+  }
+
+  .el-input__inner,
+  .el-select__placeholder,
+  .el-select__selected-item {
+    color: $text-primary;
+  }
+}
+
+.el-pagination {
+  .el-pager li {
+    background: $bg-secondary;
+    color: $text-secondary;
+
+    &.is-active {
+      background: $color-primary;
+      color: #fff;
+    }
+
+    &:hover:not(.is-active) {
+      color: $color-primary;
+    }
+  }
+
+  .btn-prev,
+  .btn-next {
+    background: $bg-secondary;
+    color: $text-secondary;
+  }
+}
+
+.el-dialog {
+  background: $bg-card;
+  border: 1px solid $border-color;
+
+  .el-dialog__header {
+    border-bottom: 1px solid $border-color;
+    padding: 16px 20px;
+
+    .el-dialog__title {
+      color: $text-primary;
+    }
+  }
+
+  .el-dialog__body {
+    padding: 20px;
+    color: $text-secondary;
+  }
+
+  .el-dialog__footer {
+    border-top: 1px solid $border-color;
+    padding: 12px 20px;
+  }
+}
+
+.el-tag {
+  &--info {
+    background: rgba(107, 124, 147, 0.2);
+    border-color: rgba(107, 124, 147, 0.3);
+    color: $text-secondary;
+  }
+
+  &--success {
+    background: rgba(46, 213, 115, 0.15);
+    border-color: rgba(46, 213, 115, 0.3);
+    color: $color-success;
+  }
+
+  &--warning {
+    background: rgba(255, 176, 32, 0.15);
+    border-color: rgba(255, 176, 32, 0.3);
+    color: $color-warning;
+  }
+
+  &--danger {
+    background: rgba(255, 71, 87, 0.15);
+    border-color: rgba(255, 71, 87, 0.3);
+    color: $color-danger;
+  }
+
+  &--primary {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: rgba(0, 212, 255, 0.3);
+    color: $color-primary;
+  }
+}
+
+.el-breadcrumb {
+  .el-breadcrumb__inner {
+    color: $text-secondary;
+
+    &.is-link {
+      &:hover {
+        color: $color-primary;
+      }
+    }
+  }
+
+  .el-breadcrumb__separator {
+    color: $text-tertiary;
+  }
+}

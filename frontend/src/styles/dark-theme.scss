@@ -1,0 +1,222 @@
+$bg-primary: #0a1019;
+$bg-secondary: #111827;
+$bg-card: #1a2332;
+$bg-card-hover: #233044;
+$border-color: #2a3a52;
+$text-primary: #e6edf3;
+$text-secondary: #8b98a9;
+$text-muted: #6b7685;
+$accent-blue: #3b82f6;
+$accent-cyan: #06b6d4;
+$accent-green: #10b981;
+$accent-orange: #f59e0b;
+$accent-purple: #8b5cf6;
+$accent-red: #ef4444;
+$accent-pink: #ec4899;
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background-color: $bg-primary;
+  color: $text-primary;
+}
+
+.dashboard-layout {
+  min-height: 100vh;
+  background-color: $bg-primary;
+  color: $text-primary;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background-color: $bg-secondary;
+  border-bottom: 1px solid $border-color;
+
+  .page-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+    color: $text-primary;
+  }
+
+  .page-nav {
+    display: flex;
+    gap: 8px;
+  }
+}
+
+.page-content {
+  padding: 20px 24px;
+}
+
+.card {
+  background-color: $bg-card;
+  border: 1px solid $border-color;
+  border-radius: 8px;
+  padding: 16px;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #222f42;
+  }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: $text-secondary;
+    margin-bottom: 12px;
+  }
+}
+
+:deep(.el-button) {
+  background-color: $bg-card;
+  border-color: $border-color;
+  color: $text-primary;
+
+  &:hover {
+    background-color: $bg-card-hover;
+    border-color: $accent-blue;
+    color: $accent-blue;
+  }
+
+  &.is-active {
+    background-color: $accent-blue;
+    border-color: $accent-blue;
+    color: #fff;
+  }
+}
+
+:deep(.el-input__wrapper) {
+  background-color: $bg-card;
+  box-shadow: 0 0 0 1px $border-color inset;
+
+  &:hover {
+    box-shadow: 0 0 0 1px $accent-blue inset;
+  }
+
+  &.is-focus {
+    box-shadow: 0 0 0 1px $accent-blue inset;
+  }
+}
+
+:deep(.el-input__inner) {
+  color: $text-primary;
+
+  &::placeholder {
+    color: $text-muted;
+  }
+}
+
+:deep(.el-select .el-input__wrapper) {
+  background-color: $bg-card;
+}
+
+:deep(.el-select-dropdown) {
+  background-color: $bg-secondary;
+  border: 1px solid $border-color;
+}
+
+:deep(.el-select-dropdown__item) {
+  color: $text-primary;
+
+  &.is-selected,
+  &.hover {
+    background-color: $bg-card-hover;
+    color: $accent-blue;
+  }
+}
+
+:deep(.el-table) {
+  --el-table-bg-color: $bg-card;
+  --el-table-tr-bg-color: $bg-card;
+  --el-table-header-bg-color: $bg-secondary;
+  --el-table-border-color: $border-color;
+  --el-table-header-text-color: $text-secondary;
+  --el-table-text-color: $text-primary;
+  --el-table-row-hover-bg-color: $bg-card-hover;
+  background-color: $bg-card;
+}
+
+:deep(.el-table th.el-table__cell) {
+  background-color: $bg-secondary;
+  color: $text-secondary;
+  font-weight: 500;
+}
+
+:deep(.el-tag) {
+  background-color: rgba($accent-blue, 0.15);
+  border: 1px solid rgba($accent-blue, 0.3);
+  color: $accent-blue;
+}
+
+:deep(.el-breadcrumb__inner) {
+  color: $text-secondary;
+
+  &.is-link {
+    color: $accent-blue;
+    cursor: pointer;
+
+    &:hover {
+      color: #5b96f8;
+    }
+  }
+}
+
+:deep(.el-breadcrumb__separator) {
+  color: $text-muted;
+}
+
+:deep(.el-pagination) {
+  --el-pagination-bg-color: $bg-card;
+  --el-pagination-text-color: $text-primary;
+  --el-pagination-button-bg-color: $bg-card;
+  --el-pagination-hover-color: $accent-blue;
+
+  .btn-prev,
+  .btn-next,
+  .el-pager li {
+    background-color: $bg-card;
+    color: $text-primary;
+    border: 1px solid $border-color;
+
+    &:hover {
+      color: $accent-blue;
+    }
+
+    &.is-active {
+      background-color: $accent-blue;
+      color: #fff;
+      border-color: $accent-blue;
+    }
+  }
+}
+
+:deep(.el-scrollbar__bar) {
+  opacity: 0.4;
+}
+
+:deep(.el-loading-mask) {
+  background-color: rgba($bg-primary, 0.8);
+}
+
+:deep(.el-drawer) {
+  background-color: $bg-secondary;
+  color: $text-primary;
+}
+
+:deep(.el-drawer__header) {
+  color: $text-primary;
+  border-bottom: 1px solid $border-color;
+}
+
+:deep(.el-descriptions) {
+  --el-descriptions-bg-color: $bg-card;
+  --el-descriptions-text-color: $text-primary;
+  --el-descriptions-item-label-color: $text-secondary;
+  --el-descriptions-border-color: $border-color;
+}

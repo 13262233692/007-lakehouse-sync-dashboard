@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: lakehouse-hive-metastore
+    ports:
+      - "9083:9083"
+    environment:
+      - SERVICE_NAME=metastore
+      - DB_DRIVER=derby
+      - HIVE_CUSTOM_CONF_DIR=/hive/conf
+    volumes:
+      - hive-metastore-data:/opt/hive/data
+    networks:
+      - lakehouse-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: lakehouse-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - HIVE_METASTORE_HOST=hive-metastore
+      - HIVE_METASTORE_PORT=9083
+      - DATABASE_URL=sqlite+aiosqlite:///./lakehouse.db
+      - DEBUG=false
+    depends_on:
+      - hive-metastore
+    volumes:
+      - backend-data:/app/data
+    networks:
+      - lakehouse-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: lakehouse-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - lakehouse-network
+
+volumes:
+  hive-metastore-data:
+  backend-data:
+
+networks:
+  lakehouse-network:
+    driver: bridge
