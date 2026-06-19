@@ -12,6 +12,12 @@ const routes = [
     meta: { title: '总览大屏' }
   },
   {
+    path: '/acceleration-network',
+    name: 'AccelerationNetwork',
+    component: () => import('@/views/AccelerationNetwork.vue'),
+    meta: { title: '加速网络' }
+  },
+  {
     path: '/dictionary',
     name: 'Dictionary',
     component: () => import('@/views/Dictionary.vue'),

@@ -1,0 +1,1 @@
+import{s as t}from"./index-BKabSYSa.js";function a(){return t({url:"/stats/overview",method:"get"})}function n(e){return t({url:"/stats/tree",method:"get",params:e})}function o(e){return t({url:"/stats/trend",method:"get",params:e})}function s(){return t({url:"/stats/source-breakdown",method:"get"})}export{s as a,o as b,n as c,a as g};

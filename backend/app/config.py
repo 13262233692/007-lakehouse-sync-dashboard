@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     HIVE_MAX_PARTITIONS: int = 10000
     HIVE_BATCH_SLEEP: float = 0.1
 
+    STARROCKS_FE_HOST: str = "localhost"
+    STARROCKS_QUERY_PORT: int = 9030
+    STARROCKS_USER: str = "root"
+    STARROCKS_PASSWORD: str = ""
+    STARROCKS_DATABASE: str = "information_schema"
+
+    LINEAGE_CACHE_TTL_SECONDS: int = 300
+
     OSS_ENDPOINT: str = ""
     OSS_ACCESS_KEY_ID: str = ""
     OSS_ACCESS_KEY_SECRET: str = ""

@@ -30,6 +30,10 @@
             <el-icon><Monitor /></el-icon>
             <span>总览大屏</span>
           </el-menu-item>
+          <el-menu-item index="/acceleration-network">
+            <el-icon><Connection /></el-icon>
+            <span>加速网络</span>
+          </el-menu-item>
           <el-menu-item index="/dictionary">
             <el-icon><Collection /></el-icon>
             <span>数据字典</span>
