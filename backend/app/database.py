@@ -29,3 +29,7 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(ModelsBase.metadata.create_all)
+
+
+def get_session():
+    return AsyncSessionLocal

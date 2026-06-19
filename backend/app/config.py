@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     HIVE_METASTORE_HOST: str = "localhost"
     HIVE_METASTORE_PORT: int = 9083
+    HIVE_BATCH_SIZE: int = 100
+    HIVE_MAX_PARTITIONS: int = 10000
+    HIVE_BATCH_SLEEP: float = 0.1
 
     OSS_ENDPOINT: str = ""
     OSS_ACCESS_KEY_ID: str = ""

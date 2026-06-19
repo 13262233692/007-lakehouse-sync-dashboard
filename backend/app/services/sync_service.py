@@ -1,19 +1,22 @@
+import gc
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.connectors import HiveConnector, OSSConnector, TableStoreConnector
+from app.connectors.hive_connector import HivePartition, PartitionBatch
+from app.database import AsyncSessionLocal, get_session
 from app.models import (
-    ColumnMeta,
+    AssetColumn,
+    AssetPartition,
     DataAsset,
-    PartitionInfo,
-    SyncHistory,
-    get_session,
+    SyncTask,
+    StorageTrend,
 )
 from app.utils import normalize_storage_path
 
@@ -27,18 +30,25 @@ _sync_service: Optional["SyncService"] = None
 
 class SyncService:
     def __init__(self) -> None:
-        self.hive = HiveConnector()
+        self.hive = HiveConnector(
+            batch_size=settings.HIVE_BATCH_SIZE,
+            max_partitions=settings.HIVE_MAX_PARTITIONS,
+        )
         self.oss = OSSConnector()
         self.ots = TableStoreConnector()
-        logger.info("SyncService initialized")
+        self.batch_sleep = settings.HIVE_BATCH_SLEEP
+        logger.info(
+            "SyncService initialized (hive_batch_size=%d, hive_max_partitions=%d)",
+            settings.HIVE_BATCH_SIZE, settings.HIVE_MAX_PARTITIONS
+        )
 
     async def _create_sync_history(
         self,
         session: AsyncSession,
         source_type: str,
-    ) -> SyncHistory:
-        history = SyncHistory(
-            source_type=source_type,
+    ) -> SyncTask:
+        history = SyncTask(
+            task_type=source_type,
             status="running",
             started_at=datetime.utcnow(),
         )
@@ -50,15 +60,15 @@ class SyncService:
     async def _finish_sync_history(
         self,
         session: AsyncSession,
-        history: SyncHistory,
+        history: SyncTask,
         status: str,
         records_processed: int = 0,
         error_message: Optional[str] = None,
     ) -> None:
         history.status = status
-        history.records_processed = records_processed
+        history.processed_assets = records_processed
         history.error_message = error_message
-        history.finished_at = datetime.utcnow()
+        history.completed_at = datetime.utcnow()
         await session.commit()
 
     async def _upsert_asset(
@@ -66,45 +76,54 @@ class SyncService:
         session: AsyncSession,
         source_type: str,
         name: str,
+        fully_qualified_name: str,
+        storage_layer: str,
+        database_name: Optional[str] = None,
         schema_name: Optional[str] = None,
         table_name: Optional[str] = None,
         storage_path: Optional[str] = None,
+        table_type: Optional[str] = None,
+        location: Optional[str] = None,
+        format: Optional[str] = None,
+        description: Optional[str] = None,
+        owner: Optional[str] = None,
     ) -> DataAsset:
         normalized_path = normalize_storage_path(storage_path) if storage_path else None
         stmt = select(DataAsset).where(
             (DataAsset.source_type == source_type)
-            & (
-                (DataAsset.name == name)
-                | (
-                    (DataAsset.schema_name == schema_name)
-                    & (DataAsset.table_name == table_name)
-                    & (schema_name is not None)
-                    & (table_name is not None)
-                )
-                | ((DataAsset.storage_path == normalized_path) & (normalized_path is not None))
-            )
+            & (DataAsset.fully_qualified_name == fully_qualified_name)
         )
         result = await session.execute(stmt)
         asset = result.scalar_one_or_none()
         if asset is None:
             asset = DataAsset(
                 name=name,
+                fully_qualified_name=fully_qualified_name,
                 source_type=source_type,
+                storage_layer=storage_layer,
+                database_name=database_name,
                 schema_name=schema_name,
                 table_name=table_name,
-                storage_path=normalized_path,
+                location=location,
+                format=format,
+                description=description,
+                owner=owner,
+                last_updated_at=datetime.utcnow(),
             )
             session.add(asset)
             await session.flush()
-            logger.info("Created new data asset: %s (%s)", name, source_type)
+            logger.info("Created new data asset: %s (%s)", fully_qualified_name, source_type)
         else:
             asset.name = name
+            asset.database_name = database_name
             asset.schema_name = schema_name
             asset.table_name = table_name
-            if normalized_path:
-                asset.storage_path = normalized_path
-            asset.last_sync_at = datetime.utcnow()
-            logger.info("Updated existing data asset: %s (%s)", name, source_type)
+            asset.location = location or asset.location
+            asset.format = format or asset.format
+            asset.description = description or asset.description
+            asset.owner = owner or asset.owner
+            asset.last_updated_at = datetime.utcnow()
+            logger.info("Updated existing data asset: %s (%s)", fully_qualified_name, source_type)
         return asset
 
     async def sync_hive_metadata(self) -> Dict[str, Any]:
@@ -127,7 +146,7 @@ class SyncService:
                                     "Error syncing hive table %s.%s: %s",
                                     db, table_name, str(e),
                                 )
-                await self._finish_sync_history(session, history, "success", records_processed)
+                await self._finish_sync_history(session, history, "completed", records_processed)
                 logger.info("Hive metadata sync completed: %d tables processed", records_processed)
                 return {"status": "success", "records_processed": records_processed, "source": "hive"}
             except Exception as e:
@@ -141,84 +160,243 @@ class SyncService:
         table = self.hive.get_table(db_name, table_name)
         if not table:
             return
+
+        fully_qualified_name = f"hive.{db_name}.{table_name}"
         asset = await self._upsert_asset(
             session,
             source_type="hive",
-            name=f"{db_name}.{table_name}",
+            name=table_name,
+            fully_qualified_name=fully_qualified_name,
+            storage_layer="hive",
+            database_name=db_name,
             schema_name=db_name,
             table_name=table_name,
             storage_path=table.location,
+            table_type=table.table_type,
+            location=table.location,
+            format=table.parameters.get("serialization.lib"),
+            description=table.parameters.get("comment"),
+            owner=table.owner,
         )
+
         schema = self.hive.get_table_schema(db_name, table_name)
         if schema:
             await self._update_columns(session, asset.id, schema)
+            asset.column_count = len(schema)
+
         partition_keys = self.hive.get_partition_keys(db_name, table_name)
         if partition_keys:
-            asset.partition_key = ",".join(partition_keys)
-            partitions = self.hive.get_partitions(db_name, table_name)
-            await self._update_partitions(session, asset.id, partitions)
+            asset.partition_count = await self._update_partitions_streaming(
+                session, asset.id, db_name, table_name, partition_keys
+            )
+        else:
+            asset.partition_count = 0
+
         try:
-            total_size_param = table.parameters.get("totalSize") or table.parameters.get("numFiles")
+            total_size_param = table.parameters.get("totalSize")
             if total_size_param:
                 asset.total_size_bytes = int(total_size_param)
             row_count = table.parameters.get("numRows")
             if row_count:
-                asset.record_count = int(row_count)
+                asset.row_count = int(row_count)
             file_count = table.parameters.get("numFiles")
             if file_count:
                 asset.file_count = int(file_count)
         except (ValueError, TypeError):
             pass
+
         await session.commit()
 
     async def _update_columns(
         self, session: AsyncSession, asset_id: int, schema: List[Dict[str, Any]]
     ) -> None:
         await session.execute(
-            ColumnMeta.__table__.delete().where(ColumnMeta.asset_id == asset_id)
+            AssetColumn.__table__.delete().where(AssetColumn.asset_id == asset_id)
         )
         for col in schema:
-            column_meta = ColumnMeta(
+            column_meta = AssetColumn(
                 asset_id=asset_id,
-                column_name=col["column_name"],
+                name=col["column_name"],
                 data_type=col["data_type"],
                 comment=col.get("comment", ""),
                 is_nullable=col.get("is_nullable", True),
-                position=col.get("position", 0),
+                is_partition=False,
+                ordinal_position=col.get("position", 0),
             )
             session.add(column_meta)
 
-    async def _update_partitions(
-        self, session: AsyncSession, asset_id: int, partitions: List[Any]
-    ) -> None:
-        await session.execute(
-            PartitionInfo.__table__.delete().where(PartitionInfo.asset_id == asset_id)
+    async def _update_partitions_streaming(
+        self,
+        session: AsyncSession,
+        asset_id: int,
+        db_name: str,
+        table_name: str,
+        partition_keys: List[str],
+    ) -> int:
+        logger.info(
+            "Starting streaming partition sync for %s.%s (asset_id=%d)",
+            db_name, table_name, asset_id
         )
-        for idx, p in enumerate(partitions):
-            partition_name = ",".join(p.values) if hasattr(p, "values") else f"partition_{idx}"
-            partition_value = ",".join(p.values) if hasattr(p, "values") else None
-            location = getattr(p, "location", None)
+
+        partition_count_result = await session.execute(
+            select(func.count(AssetPartition.id))
+            .where(AssetPartition.asset_id == asset_id)
+        )
+        existing_count = partition_count_result.scalar_one() or 0
+        logger.info(
+            "Found %d existing partitions for asset_id=%d",
+            existing_count, asset_id
+        )
+
+        total_processed = 0
+        total_size = 0
+        total_files = 0
+
+        try:
+            partition_count = self.hive.get_partition_count(db_name, table_name)
+            logger.info(
+                "Table %s.%s has %d total partitions in Hive Metastore",
+                db_name, table_name, partition_count
+            )
+
+            if partition_count > settings.HIVE_MAX_PARTITIONS:
+                logger.warning(
+                    "Large table detected: %s.%s has %d partitions (limit=%d). "
+                    "Using incremental sync for last %d days.",
+                    db_name, table_name, partition_count,
+                    settings.HIVE_MAX_PARTITIONS,
+                    settings.HIVE_MAX_PARTITIONS
+                )
+                start_date = datetime.utcnow() - timedelta(days=min(partition_count, 365))
+                end_date = datetime.utcnow()
+            else:
+                start_date = None
+                end_date = None
+
+            batch_iter = self.hive.iter_partitions_batched(
+                db_name, table_name,
+                partition_keys=partition_keys,
+                start_date=start_date,
+                end_date=end_date,
+                batch_sleep=self.batch_sleep,
+            )
+
+            for batch in batch_iter:
+                batch_size = len(batch.partitions)
+                logger.info(
+                    "Processing partition batch %d/%d for %s.%s: %d partitions "
+                    "(estimated mem: %s)",
+                    batch.batch_index + 1, batch.total_batches,
+                    db_name, table_name, batch_size,
+                    bytes_to_human(batch.memory_safe_estimate_bytes)
+                )
+
+                await self._process_partition_batch(
+                    session, asset_id, batch.partitions
+                )
+
+                total_processed += batch_size
+                for p in batch.partitions:
+                    try:
+                        total_size += int(p.parameters.get("totalSize", 0) or 0)
+                        total_files += int(p.parameters.get("numFiles", 0) or 0)
+                    except (ValueError, TypeError):
+                        pass
+
+                if batch.batch_index % 10 == 0 and batch.has_more:
+                    logger.info(
+                        "Progress: %d/%d partitions processed for %s.%s",
+                        total_processed, partition_count, db_name, table_name
+                    )
+
+                gc.collect()
+
+        except Exception as e:
+            logger.error(
+                "Error during streaming partition sync for %s.%s: %s",
+                db_name, table_name, str(e), exc_info=True
+            )
+            raise
+
+        logger.info(
+            "Completed streaming partition sync for %s.%s: "
+            "processed %d partitions, total_size=%s, total_files=%d",
+            db_name, table_name, total_processed,
+            bytes_to_human(total_size), total_files
+        )
+
+        if total_processed > 0:
+            update_stmt = (
+                DataAsset.__table__.update()
+                .where(DataAsset.id == asset_id)
+                .values(
+                    total_size_bytes=total_size,
+                    file_count=total_files,
+                    partition_count=total_processed,
+                    last_updated_at=datetime.utcnow(),
+                )
+            )
+            await session.execute(update_stmt)
+
+        return total_processed
+
+    async def _process_partition_batch(
+        self,
+        session: AsyncSession,
+        asset_id: int,
+        partitions: List[HivePartition],
+    ) -> None:
+        partition_names = [p.name for p in partitions]
+
+        if not partition_names:
+            return
+
+        delete_stmt = (
+            AssetPartition.__table__.delete()
+            .where(AssetPartition.asset_id == asset_id)
+            .where(AssetPartition.name.in_(partition_names))
+        )
+        delete_result = await session.execute(delete_stmt)
+        deleted = delete_result.rowcount or 0
+        if deleted > 0:
+            logger.debug("Deleted %d existing partitions for upsert", deleted)
+
+        for p in partitions:
+            partition_name = p.name
+            partition_value = p.partition_values
+            location = p.location
             size_bytes = None
-            record_count = None
-            params = getattr(p, "parameters", {}) or {}
+            row_count = None
+            file_count = None
+
+            params = p.parameters or {}
             try:
                 total_size = params.get("totalSize")
                 if total_size:
                     size_bytes = int(total_size)
                 row_count = params.get("numRows")
                 if row_count:
-                    record_count = int(row_count)
+                    row_count = int(row_count)
+                num_files = params.get("numFiles")
+                if num_files:
+                    file_count = int(num_files)
             except (ValueError, TypeError):
                 pass
-            partition_info = PartitionInfo(
+
+            partition_info = AssetPartition(
                 asset_id=asset_id,
-                partition_name=partition_name,
-                partition_value=partition_value,
+                name=partition_name,
+                value=partition_value,
+                size_bytes=size_bytes or 0,
+                file_count=file_count or 0,
+                row_count=row_count,
                 location=location,
-                size_bytes=size_bytes,
-                record_count=record_count,
+                created_at=datetime.fromtimestamp(p.create_time) if p.create_time else None,
+                last_modified_at=datetime.fromtimestamp(p.create_time) if p.create_time else None,
             )
             session.add(partition_info)
+
+        await session.commit()
 
     async def sync_oss_metadata(self) -> Dict[str, Any]:
         logger.info("Starting OSS metadata sync")
@@ -240,7 +418,7 @@ class SyncService:
                             records_processed += 1
                         except Exception as e:
                             logger.error("Error syncing OSS prefix %s: %s", prefix, str(e))
-                await self._finish_sync_history(session, history, "success", records_processed)
+                await self._finish_sync_history(session, history, "completed", records_processed)
                 logger.info("OSS metadata sync completed: %d directories processed", records_processed)
                 return {"status": "success", "records_processed": records_processed, "source": "oss"}
             except Exception as e:
@@ -252,11 +430,15 @@ class SyncService:
         self, session: AsyncSession, prefix: str, stats: Dict[str, Any]
     ) -> None:
         name = prefix.rstrip("/") or "root"
+        fully_qualified_name = f"oss.{name}"
         asset = await self._upsert_asset(
             session,
             source_type="oss",
             name=name,
+            fully_qualified_name=fully_qualified_name,
+            storage_layer="oss",
             storage_path=prefix,
+            location=prefix,
         )
         asset.total_size_bytes = stats.get("total_size_bytes", 0)
         asset.file_count = stats.get("file_count", 0)
@@ -279,7 +461,7 @@ class SyncService:
                             "Error syncing TableStore table %s: %s",
                             table_name, str(e),
                         )
-                await self._finish_sync_history(session, history, "success", records_processed)
+                await self._finish_sync_history(session, history, "completed", records_processed)
                 logger.info("TableStore metadata sync completed: %d tables processed", records_processed)
                 return {"status": "success", "records_processed": records_processed, "source": "tablestore"}
             except Exception as e:
@@ -291,16 +473,20 @@ class SyncService:
         self, session: AsyncSession, table_name: str
     ) -> None:
         schema = self.ots.get_table_schema(table_name)
+        fully_qualified_name = f"tablestore.{table_name}"
         asset = await self._upsert_asset(
             session,
             source_type="tablestore",
             name=table_name,
+            fully_qualified_name=fully_qualified_name,
+            storage_layer="tablestore",
             table_name=table_name,
         )
         if schema:
             await self._update_columns(session, asset.id, schema)
+            asset.column_count = len(schema)
         row_count = self.ots.get_row_count(table_name)
-        asset.record_count = row_count
+        asset.row_count = row_count
         await session.commit()
 
     async def full_sync(self) -> Dict[str, Any]:
